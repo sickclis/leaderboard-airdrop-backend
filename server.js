@@ -226,9 +226,11 @@ async function updateLeaderboard() {
   }
 }
 
-// --- Leaderboard endpoint ---
+// --- Leaderboard endpoint (old logic) ---
 app.get('/leaderboard', (req, res) => {
-  if (isUpdating && !cachedLeaderboard.length) return res.json([]);
+  if (isUpdating && !cachedLeaderboard.length) {
+    return res.json({ loading: true });
+  }
   res.json(cachedLeaderboard.slice(0, 250));
 });
 
