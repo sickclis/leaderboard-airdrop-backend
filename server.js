@@ -2,8 +2,17 @@ require('dotenv').config();
 const express = require('express');
 const fetch = require('node-fetch');
 const PDFDocument = require('pdfkit');
+const cors = require('cors');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ✅ Enable CORS
+// For dev, allow all origins. For prod, change "*" to your actual frontend domains.
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+}));
 
 const UPDATE_INTERVAL = 15 * 60 * 1000; // 15 min
 const BASE_ENTRIES = 500;
@@ -26,13 +35,11 @@ const BLACKLIST = [
 function getMultiplier(pct) {
   if (pct < 0.001) return 8.0;
 
-  // 0.001% → 0.01% range: 8.0 → 9.0 smoothly
   if (pct < 0.01) {
     const t = (pct - 0.001) / (0.01 - 0.001);
     return Number((8.0 + t * 1.0).toFixed(4));
   }
 
-  // 0.01% → 0.1% range: 9.0 → 10.0 smoothly
   if (pct < 0.1) {
     const t = (pct - 0.01) / (0.1 - 0.01);
     return Number((9.0 + t * 1.0).toFixed(4));
