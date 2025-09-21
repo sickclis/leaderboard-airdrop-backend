@@ -314,6 +314,27 @@ app.get('/price', async (req, res) => {
   res.json({ token, price, source: lastPriceSource, lastUpdated: new Date().toISOString() });
 });
 
+// --- /supply endpoint ---
+app.get('/supply', async (req, res) => {
+  const token = process.env.DEFAULT_TOKEN || '';
+  const apiKey = process.env.HELIUS_KEY;
+  if (!token || !apiKey) {
+    return res.status(400).json({ error: "Missing DEFAULT_TOKEN or HELIUS_KEY" });
+  }
+
+  try {
+    const { supply } = await getTokenDecimalsAndSupply(apiKey, token);
+    res.json({
+      token,
+      supply,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error("Supply fetch failed:", err);
+    res.status(500).json({ error: "Failed to fetch supply" });
+  }
+});
+
 // --- Start ---
 app.listen(PORT, () => {
   console.log(`Server live on http://localhost:${PORT}`);
