@@ -1,0 +1,64 @@
+===========================
+ Kid Buu Leaderboard Backend - API Endpoints
+===========================
+
+🌐 Base URL (local):
+http://localhost:3000
+
+---
+
+1) /leaderboard
+- URL: http://localhost:3000/leaderboard
+- Returns: JSON array of the top 250 holders
+- Fields: rank, wallet, balance, pct, multiplier, entries, currentValue, formRequired
+
+---
+
+2) /myentries?wallet=<WALLET_ADDRESS>
+- URL Example: http://localhost:3000/myentries?wallet=YourWalletPubkey
+- Returns: JSON object with stats for a single wallet
+- Use case: Called by the MiniAppCard after connect-wallet
+
+---
+
+3) /wallet/:address
+- URL Example: http://localhost:3000/wallet/YourWalletPubkey
+- Returns: Same as /myentries but REST-style
+- Use case: Manual lookup for debugging (you don’t need a frontend wallet connect)
+
+---
+
+4) /price
+- URL: http://localhost:3000/price
+- Returns: { token, price, lastUpdated }
+- Price is fetched from Jupiter API (cached between leaderboard updates)
+
+---
+
+5) /download
+- URL: http://localhost:3000/download
+- Returns: A downloadable PDF snapshot of the current leaderboard
+- Contains: Rank, Wallet, Balance, % Supply, Multiplier, Entries, Current Value, Form Required
+
+---
+
+🛠️ How to run locally:
+1. Install deps:
+   npm install express node-fetch pdfkit dotenv
+
+2. Add a `.env` file with:
+   PORT=3000
+   DEFAULT_TOKEN=<your token mint>
+   HELIUS_KEY=<your helius key>
+
+3. Start server:
+   node server.js
+
+4. Open the URLs in your browser (above) to test endpoints.
+
+---
+
+💡 Notes:
+- Leaderboard auto-updates every 15 minutes (configurable in UPDATE_INTERVAL).
+- Cached price is refreshed on each leaderboard update and on /price calls.
+- Both `/myentries` and `/wallet/:address` are interchangeable for single-wallet debug checks.
