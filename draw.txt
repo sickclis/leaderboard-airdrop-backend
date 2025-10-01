@@ -1,0 +1,4 @@
+const { Connection } = require("@solana/web3.js");
+const conn = new Connection("https://api.mainnet-beta.solana.com");
+const block = await conn.getBlock(297335381, { maxSupportedTransactionVersion: 0 });
+console.log(block.blockhash);

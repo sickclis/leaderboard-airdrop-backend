@@ -3,12 +3,12 @@ const express = require('express');
 const fetch = require('node-fetch');
 const PDFDocument = require('pdfkit');
 const cors = require('cors');
+const fs = require('fs');
+const { Connection } = require('@solana/web3.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ Enable CORS
-// For dev, allow all origins. For prod, change "*" to your actual frontend domains.
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST"],
@@ -24,9 +24,14 @@ let isUpdating = false;
 let cachedPrice = 0;
 let lastPriceSource = "cache";
 
+// === Milestone tracking ===
+let giveawayCommitted = false;
+let airdropDumped = false;
+const OFFSET = 500; // slots ahead for randomness at $200M
+
 // === Blacklist addresses here ===
 const BLACKLIST = [
-  "11111111111111111111111111111111", // Example burn
+  "11111111111111111111111111111111",
   "YourTreasuryWalletHere",
   "LPVaultWalletHere"
 ];
@@ -34,25 +39,22 @@ const BLACKLIST = [
 // --- Smooth multiplier logic (continuous, capped at 10x) ---
 function getMultiplier(pct) {
   if (pct < 0.001) return 8.0;
-
   if (pct < 0.01) {
     const t = (pct - 0.001) / (0.01 - 0.001);
     return Number((8.0 + t * 1.0).toFixed(4));
   }
-
   if (pct < 0.1) {
     const t = (pct - 0.01) / (0.1 - 0.01);
     return Number((9.0 + t * 1.0).toFixed(4));
   }
-
-  return 10.0; // cap
+  return 10.0;
 }
 
 // --- Dynamic min token thresholds based on market cap ---
 function getMinTokensForEntries(marketCap) {
-  if (marketCap < 200_000) return 100;   // under $200k → 100 tokens
-  if (marketCap < 2_000_000) return 10;  // under $2M → 10 tokens
-  return 1;                              // $2M+ → 1 token
+  if (marketCap < 200_000) return 100;
+  if (marketCap < 2_000_000) return 10;
+  return 1;
 }
 
 // --- Helper: Get decimals and supply ---
@@ -110,10 +112,9 @@ async function fetchAllHolders(apiKey, token, decimals) {
   return owners;
 }
 
-// --- Helper: Fetch token price (PumpFun → DexScreener → Jupiter) ---
+// --- Helper: Fetch token price ---
 async function fetchTokenPrice(mint) {
   try {
-    // PumpFun
     const pumpUrl = `https://frontend-api.pump.fun/coins/${mint}`;
     const pumpResp = await fetch(pumpUrl);
     if (pumpResp.ok) {
@@ -121,12 +122,9 @@ async function fetchTokenPrice(mint) {
       if (pumpData?.usdPrice) {
         cachedPrice = Number(pumpData.usdPrice);
         lastPriceSource = "pumpfun";
-        console.log(`[PRICE] ${mint} from Pump.fun: $${cachedPrice}`);
         return cachedPrice;
       }
     }
-
-    // DexScreener
     const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
     const dexResp = await fetch(dexUrl);
     if (dexResp.ok) {
@@ -134,12 +132,9 @@ async function fetchTokenPrice(mint) {
       if (dexData?.pairs?.[0]?.priceUsd) {
         cachedPrice = Number(dexData.pairs[0].priceUsd);
         lastPriceSource = "dexscreener";
-        console.log(`[PRICE] ${mint} from DexScreener: $${cachedPrice}`);
         return cachedPrice;
       }
     }
-
-    // Jupiter
     const jupUrl = `https://price.jup.ag/v6/price?ids=${mint}&vsToken=USDC`;
     const jupResp = await fetch(jupUrl);
     if (jupResp.ok) {
@@ -147,7 +142,6 @@ async function fetchTokenPrice(mint) {
       if (jupData?.data?.[mint]?.price) {
         cachedPrice = Number(jupData.data[mint].price);
         lastPriceSource = "jupiter";
-        console.log(`[PRICE] ${mint} from Jupiter: $${cachedPrice}`);
         return cachedPrice;
       }
     }
@@ -158,7 +152,40 @@ async function fetchTokenPrice(mint) {
   return cachedPrice;
 }
 
-// --- Main leaderboard calculation and cache ---
+// --- Save 200M commit (slot + offset) ---
+async function commit200M(marketCap) {
+  const conn = new Connection("https://api.mainnet-beta.solana.com", "finalized");
+  const slot = await conn.getSlot("finalized");
+  const futureSlot = slot + OFFSET;
+
+  const record = {
+    trigger: "200M_commit",
+    timestamp: new Date().toISOString(),
+    marketCap,
+    slotCommit: slot,
+    offset: OFFSET,
+    futureSlot
+  };
+
+  fs.writeFileSync("200M_commit.json", JSON.stringify(record, null, 2));
+  console.log(`[200M] Commitment saved (slot ${slot} → futureSlot ${futureSlot})`);
+  giveawayCommitted = true;
+}
+
+// --- Save 300M snapshot ---
+function dump300M(marketCap) {
+  const record = {
+    trigger: "300M_snapshot",
+    timestamp: new Date().toISOString(),
+    marketCap,
+    leaderboard: cachedLeaderboard
+  };
+  fs.writeFileSync("300M_snapshot.json", JSON.stringify(record, null, 2));
+  console.log(`[300M] Snapshot saved with ${cachedLeaderboard.length} holders`);
+  airdropDumped = true;
+}
+
+// --- Main leaderboard calculation and milestone checks ---
 async function updateLeaderboard() {
   try {
     isUpdating = true;
@@ -181,12 +208,7 @@ async function updateLeaderboard() {
 
     const leaderboard = holdersArray.map((holder, idx) => {
       const pct = (holder.balance / supply) * 100;
-      let multiplier = 0;
-      let entries = 0;
-      let multipliedEntries = 0;
-      let baseEntries = 0;
-      let formRequired = false;
-
+      let multiplier = 0, entries = 0, multipliedEntries = 0, baseEntries = 0, formRequired = false;
       if (holder.balance >= minTokens) {
         multiplier = Math.min(getMultiplier(pct), 10);
         multipliedEntries = Math.floor(holder.balance * multiplier);
@@ -194,13 +216,9 @@ async function updateLeaderboard() {
         entries = baseEntries + multipliedEntries;
         if (entries > MAX_ENTRIES) entries = MAX_ENTRIES;
       } else {
-        multiplier = 0;
-        entries = 0;
         formRequired = true;
       }
-
       const currentValue = holder.balance * tokenPrice;
-
       return {
         rank: idx + 1,
         wallet: holder.wallet,
@@ -219,12 +237,24 @@ async function updateLeaderboard() {
     cachedLeaderboard = leaderboard;
     lastUpdate = new Date();
     isUpdating = false;
-    console.log(`Leaderboard updated: ${cachedLeaderboard.length} holders (after blacklist) at ${lastUpdate.toISOString()}`);
+
+    // Milestone logic
+    if (marketCap >= 200_000_000 && !giveawayCommitted) {
+      await commit200M(marketCap);
+    }
+    if (marketCap >= 300_000_000 && !airdropDumped) {
+      dump300M(marketCap);
+    }
+
+    console.log(`Leaderboard updated: ${cachedLeaderboard.length} holders at ${lastUpdate.toISOString()}`);
   } catch (err) {
     isUpdating = false;
     console.error('Leaderboard update error:', err);
   }
 }
+
+// --- Existing endpoints stay here (leaderboard, PDF, myentries, etc.) ---
+// ... [keep all your existing endpoints untouched]
 
 // --- Leaderboard endpoint (old logic) ---
 app.get('/leaderboard', (req, res) => {
@@ -358,6 +388,28 @@ app.get('/download-snapshot.json', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="snapshot.json"');
   res.setHeader('Content-Type', 'application/json');
   res.send(JSON.stringify(cachedLeaderboard, null, 2));
+});
+
+// Force a $200M commit test
+app.get('/test200m', async (req, res) => {
+  try {
+    await commit200M(200_000_000); // fake market cap
+    res.json({ ok: true, file: "200M_commit.json created" });
+  } catch (err) {
+    console.error("Test200M failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Force a $300M snapshot test
+app.get('/test300m', async (req, res) => {
+  try {
+    await snapshot300M(300_000_000); // fake market cap
+    res.json({ ok: true, file: "300M_snapshot.json created" });
+  } catch (err) {
+    console.error("Test300M failed:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
