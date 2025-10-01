@@ -153,13 +153,13 @@ async function fetchTokenPrice(mint) {
 }
 
 // --- Save 200M commit (slot + offset) ---
-async function commit200M(marketCap) {
+async function commit200M(marketCap, isTest = false) {
   const conn = new Connection("https://api.mainnet-beta.solana.com", "finalized");
   const slot = await conn.getSlot("finalized");
   const futureSlot = slot + OFFSET;
 
-  const record = {
-    trigger: "200M_commit",
+  const commitRecord = {
+    trigger: isTest ? "200M_commit_test" : "200M_commit",
     timestamp: new Date().toISOString(),
     marketCap,
     slotCommit: slot,
@@ -167,23 +167,53 @@ async function commit200M(marketCap) {
     futureSlot
   };
 
-  fs.writeFileSync("200M_commit.json", JSON.stringify(record, null, 2));
-  console.log(`[200M] Commitment saved (slot ${slot} → futureSlot ${futureSlot})`);
+  const snapshotRecord = {
+    trigger: isTest ? "200M_snapshot_test" : "200M_snapshot",
+    timestamp: new Date().toISOString(),
+    marketCap,
+    slot,
+    leaderboard: cachedLeaderboard
+  };
+
+  if (isTest) {
+    fs.writeFileSync("200M_commit_test.json", JSON.stringify(commitRecord, null, 2));
+    fs.writeFileSync("200M_snapshot_test.json", JSON.stringify(snapshotRecord, null, 2));
+    console.log(`[200M TEST] Files written: commit + snapshot`);
+  } else {
+    fs.writeFileSync("200M_commit.json", JSON.stringify(commitRecord, null, 2));
+    fs.writeFileSync("200M_snapshot.json", JSON.stringify(snapshotRecord, null, 2));
+    // also save backups with timestamp
+    const stamp = new Date().toISOString().replace(/:/g, "-");
+    fs.writeFileSync(`200M_commit_${stamp}.json`, JSON.stringify(commitRecord, null, 2));
+    fs.writeFileSync(`200M_snapshot_${stamp}.json`, JSON.stringify(snapshotRecord, null, 2));
+    console.log(`[200M LIVE] Commit + snapshot saved with backup`);
+  }
+
   giveawayCommitted = true;
 }
 
 // --- Save 300M snapshot ---
-function dump300M(marketCap) {
+function dump300M(marketCap, isTest = false) {
   const record = {
-    trigger: "300M_snapshot",
+    trigger: isTest ? "300M_snapshot_test" : "300M_snapshot",
     timestamp: new Date().toISOString(),
     marketCap,
     leaderboard: cachedLeaderboard
   };
-  fs.writeFileSync("300M_snapshot.json", JSON.stringify(record, null, 2));
-  console.log(`[300M] Snapshot saved with ${cachedLeaderboard.length} holders`);
+
+  if (isTest) {
+    fs.writeFileSync("300M_snapshot_test.json", JSON.stringify(record, null, 2));
+    console.log(`[300M TEST] Snapshot written`);
+  } else {
+    fs.writeFileSync("300M_snapshot.json", JSON.stringify(record, null, 2));
+    const stamp = new Date().toISOString().replace(/:/g, "-");
+    fs.writeFileSync(`300M_snapshot_${stamp}.json`, JSON.stringify(record, null, 2));
+    console.log(`[300M LIVE] Snapshot saved with backup`);
+  }
+
   airdropDumped = true;
 }
+
 
 // --- Main leaderboard calculation and milestone checks ---
 async function updateLeaderboard() {
@@ -393,8 +423,10 @@ app.get('/download-snapshot.json', (req, res) => {
 // Force a $200M commit test
 app.get('/test200m', async (req, res) => {
   try {
-    await commit200M(200_000_000); // fake market cap
-    res.json({ ok: true, file: "200M_commit.json created" });
+    const fakeCap = 200_000_000;
+    await commit200M(fakeCap, true); // <-- test mode
+    const file = fs.readFileSync("200M_commit_test.json", "utf8");
+    res.json({ ok: true, record: JSON.parse(file) });
   } catch (err) {
     console.error("Test200M failed:", err);
     res.status(500).json({ error: err.message });
@@ -404,13 +436,51 @@ app.get('/test200m', async (req, res) => {
 // Force a $300M snapshot test
 app.get('/test300m', async (req, res) => {
   try {
-    await snapshot300M(300_000_000); // fake market cap
-    res.json({ ok: true, file: "300M_snapshot.json created" });
+    const fakeCap = 300_000_000;
+    dump300M(fakeCap, true); // <-- test mode
+    const file = fs.readFileSync("300M_snapshot_test.json", "utf8");
+    res.json({ ok: true, record: JSON.parse(file) });
   } catch (err) {
     console.error("Test300M failed:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
+
+// --- Download 200M commit & snapshot
+app.get('/download-200m-commit', (req, res) => {
+  if (!fs.existsSync("200M_commit.json")) return res.status(404).json({ error: "200M_commit.json not found" });
+  res.download("200M_commit.json");
+});
+
+app.get('/download-200m-snapshot', (req, res) => {
+  if (!fs.existsSync("200M_snapshot.json")) return res.status(404).json({ error: "200M_snapshot.json not found" });
+  res.download("200M_snapshot.json");
+});
+
+// --- Download 300M snapshot
+app.get('/download-300m-snapshot', (req, res) => {
+  if (!fs.existsSync("300M_snapshot.json")) return res.status(404).json({ error: "300M_snapshot.json not found" });
+  res.download("300M_snapshot.json");
+});
+
+// --- Download test commits/snapshots
+app.get('/download-200m-commit-test', (req, res) => {
+  if (!fs.existsSync("200M_commit_test.json")) return res.status(404).json({ error: "200M_commit_test.json not found" });
+  res.download("200M_commit_test.json");
+});
+
+app.get('/download-200m-snapshot-test', (req, res) => {
+  if (!fs.existsSync("200M_snapshot_test.json")) return res.status(404).json({ error: "200M_snapshot_test.json not found" });
+  res.download("200M_snapshot_test.json");
+});
+
+app.get('/download-300m-snapshot-test', (req, res) => {
+  if (!fs.existsSync("300M_snapshot_test.json")) return res.status(404).json({ error: "300M_snapshot_test.json not found" });
+  res.download("300M_snapshot_test.json");
+});
+
+
 
 
 // --- Start ---

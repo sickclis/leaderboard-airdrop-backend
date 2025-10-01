@@ -7,48 +7,100 @@ http://localhost:3000
 
 ---
 
+📊 Core Endpoints
+-----------------
+
 1) /leaderboard
 - URL: http://localhost:3000/leaderboard
 - Returns: JSON array of the top 250 holders
 - Fields: rank, wallet, balance, pct, multiplier, entries, currentValue, formRequired
 
----
-
 2) /myentries?wallet=<WALLET_ADDRESS>
 - URL Example: http://localhost:3000/myentries?wallet=YourWalletPubkey
 - Returns: JSON object with stats for a single wallet
-- Use case: Called by the MiniAppCard after connect-wallet
-
----
+- Use case: MiniAppCard after connect-wallet
 
 3) /wallet/:address
 - URL Example: http://localhost:3000/wallet/YourWalletPubkey
 - Returns: Same as /myentries but REST-style
-- Use case: Manual lookup for debugging (you don’t need a frontend wallet connect)
-
----
+- Use case: Manual lookup / debug
 
 4) /price
 - URL: http://localhost:3000/price
-- Returns: { token, price, lastUpdated }
-- Price is fetched from Jupiter API (cached between leaderboard updates)
+- Returns: { token, price, source, lastUpdated }
+- Price sources: Pump.fun → DexScreener → Jupiter (fallback)
+
+5) /supply
+- URL: http://localhost:3000/supply
+- Returns: { token, supply, lastUpdated }
+- Uses Helius getTokenSupply
+
+6) /snapshot.json
+- URL: http://localhost:3000/snapshot.json
+- Returns: Current leaderboard (minimal form: wallet, entries, balance, rank)
+
+7) /download-snapshot.json
+- URL: http://localhost:3000/download-snapshot.json
+- Downloads the full cached leaderboard JSON as a file
+
+8) /download
+- URL: http://localhost:3000/download
+- Downloads a PDF snapshot of the current leaderboard
+- Fields: Rank, Wallet, Balance, % Supply, Multiplier, Entries, Current Value, Source, Form Required
 
 ---
 
-5) /download
-- URL: http://localhost:3000/download
-- Returns: A downloadable PDF snapshot of the current leaderboard
-- Contains: Rank, Wallet, Balance, % Supply, Multiplier, Entries, Current Value, Form Required
+🎯 Milestone Testing Endpoints
+------------------------------
+
+9) /test200m
+- URL: http://localhost:3000/test200m
+- Simulates hitting $200M market cap
+- Saves: 200M_commit_test.json + 200M_snapshot_test.json
+
+10) /test300m
+- URL: http://localhost:3000/test300m
+- Simulates hitting $300M market cap
+- Saves: 300M_snapshot_test.json
+
+11) /download-200m-commit-test
+- URL: http://localhost:3000/download-200m-commit-test
+- Downloads the test $200M commit JSON
+
+12) /download-200m-snapshot-test
+- URL: http://localhost:3000/download-200m-snapshot-test
+- Downloads the test $200M snapshot JSON
+
+13) /download-300m-snapshot-test
+- URL: http://localhost:3000/download-300m-snapshot-test
+- Downloads the test $300M snapshot JSON
+
+---
+
+💾 Milestone Download Endpoints (LIVE)
+--------------------------------------
+
+14) /download-200m-commit
+- URL: http://localhost:3000/download-200m-commit
+- Downloads the $200M commit JSON (slot + offset + backup versions exist)
+
+15) /download-200m-snapshot
+- URL: http://localhost:3000/download-200m-snapshot
+- Downloads the $200M holder snapshot JSON
+
+16) /download-300m-snapshot
+- URL: http://localhost:3000/download-300m-snapshot
+- Downloads the $300M holder snapshot JSON
 
 ---
 
 🛠️ How to run locally:
 1. Install deps:
-   npm install express node-fetch pdfkit dotenv
+   npm install express node-fetch pdfkit dotenv @solana/web3.js
 
 2. Add a `.env` file with:
-   PORT=3000
-   DEFAULT_TOKEN=<your token mint>
+   PORT=3000  
+   DEFAULT_TOKEN=<your token mint>  
    HELIUS_KEY=<your helius key>
 
 3. Start server:
@@ -60,5 +112,13 @@ http://localhost:3000
 
 💡 Notes:
 - Leaderboard auto-updates every 15 minutes (configurable in UPDATE_INTERVAL).
-- Cached price is refreshed on each leaderboard update and on /price calls.
-- Both `/myentries` and `/wallet/:address` are interchangeable for single-wallet debug checks.
+- Cached price is refreshed each update and on-demand via /price.
+- Milestones automatically trigger when real marketCap crosses $200M and $300M.
+- Test endpoints only write to `_test.json` files (never overwrite live data).
+- Live milestones also generate timestamped backup files for audit-proof history.
+
+🎯 Milestone Testing Endpoints
+- Also serve as manual snapshot mode: trigger commits/snapshots on demand without waiting for market cap.
+- Test files never overwrite live milestone files.
+
+===========================

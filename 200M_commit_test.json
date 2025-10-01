@@ -1,0 +1,8 @@
+{
+  "trigger": "200M_commit_test",
+  "timestamp": "2025-10-01T09:30:46.027Z",
+  "marketCap": 200000000,
+  "slotCommit": 370451467,
+  "offset": 500,
+  "futureSlot": 370451967
+}
