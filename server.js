@@ -335,6 +335,22 @@ app.get('/supply', async (req, res) => {
   }
 });
 
+// --- Full JSON Snapshot endpoint ---
+app.get('/snapshot.json', (req, res) => {
+  if (!cachedLeaderboard.length) {
+    return res.status(503).send('Leaderboard not ready');
+  }
+  // Only include relevant fields for the draw
+  const minimal = cachedLeaderboard.map(entry => ({
+    wallet: entry.wallet,
+    entries: entry.entries,
+    balance: entry.balance,
+    rank: entry.rank
+  }));
+  res.json(minimal);
+});
+
+
 // --- Start ---
 app.listen(PORT, () => {
   console.log(`Server live on http://localhost:${PORT}`);
