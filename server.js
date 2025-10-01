@@ -350,6 +350,16 @@ app.get('/snapshot.json', (req, res) => {
   res.json(minimal);
 });
 
+// --- JSON Snapshot (download as file) ---
+app.get('/download-snapshot.json', (req, res) => {
+  if (!cachedLeaderboard.length) {
+    return res.status(503).send('Leaderboard not ready');
+  }
+  res.setHeader('Content-Disposition', 'attachment; filename="snapshot.json"');
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(cachedLeaderboard, null, 2));
+});
+
 
 // --- Start ---
 app.listen(PORT, () => {
